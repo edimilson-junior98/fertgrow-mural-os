@@ -165,9 +165,26 @@
 
   function oficinasDoDia(db, dia) {
     const doDia = ordensComDia(db).filter(o => o.dataProgramada === dia);
-    const porOf = {};
-    doDia.forEach(o => { const k = normalizarOficina(o.oficina) || 'Sem oficina definida'; (porOf[k]=porOf[k]||[]).push(o); });
-    return Object.keys(porOf).sort((a,b) => a.localeCompare(b,'pt-BR')).map(nome => ({ nome, ordens: porOf[nome] }));
+    const porOf = {}; // chave normalizada -> { ordens, nomesOriginais: {nome: contagem} }
+    doDia.forEach(o => {
+      const original = (o.oficina || '').trim() || 'Sem oficina definida';
+      const chave = normalizarOficina(o.oficina) || 'Sem oficina definida';
+      if (!porOf[chave]) porOf[chave] = { ordens: [], nomesOriginais: {} };
+      porOf[chave].ordens.push(o);
+      porOf[chave].nomesOriginais[original] = (porOf[chave].nomesOriginais[original] || 0) + 1;
+    });
+    // O nome exibido no slide é o nome completo original (ex: "Elétrica
+    // Preventiva"), não a versão cortada — só usamos a versão cortada pra
+    // AGRUPAR Preventiva+Corretiva juntas. Prioridade de escolha do rótulo:
+    // a variante "Preventiva" (se existir no grupo) > a mais comum > a chave
+    // normalizada crua, nessa ordem.
+    return Object.keys(porOf).sort((a,b) => a.localeCompare(b,'pt-BR')).map(chave => {
+      const grupo = porOf[chave];
+      const nomes = Object.keys(grupo.nomesOriginais);
+      const preventiva = nomes.find(n => /preventiva$/i.test(n));
+      const maisComum = nomes.sort((a,b) => grupo.nomesOriginais[b] - grupo.nomesOriginais[a])[0];
+      return { nome: preventiva || maisComum || chave, ordens: grupo.ordens };
+    });
   }
 
   function paint() {
