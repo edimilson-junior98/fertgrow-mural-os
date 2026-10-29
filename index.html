@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mural de Programação — Fertgrow</title>
+<style>
+  :root{
+    --bg:#0a1410; --surface:#101d16; --surface2:#16261d; --border:#213328;
+    --text:#e9f2ea; --muted:#8aa08d; --brand:#0B6B33; --brand-light:#AFD676;
+    --emerald:#34d399; --amber:#fbbf24; --rose:#fb7185; --cyan:#22d3ee;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,'Segoe UI',Inter,sans-serif;font-size:14px;}
+  .row-flex{display:flex;align-items:center;gap:8px;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;}
+  .empty{text-align:center;color:var(--muted);padding:50px 20px;border:1px dashed var(--border);border-radius:14px;}
+  .empty h3{color:var(--text);font-size:15px;margin-bottom:6px;}
+  .badge{padding:3px 9px;border-radius:6px;font-size:11.5px;font-weight:600;white-space:nowrap;display:inline-block;}
+  .btn{background:var(--brand);color:#fff;border:none;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
+  .btn:hover{background:var(--brand-light);}
+  .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--muted);}
+  .btn.ghost:hover{color:var(--text);border-color:#2c4534;}
+  .btn.small{padding:5px 10px;font-size:12px;}
+  .btn.icon-only{padding:6px;background:transparent;color:var(--muted);}
+  .btn.icon-only:hover{color:var(--brand-light);background:#17271c;}
+  select{background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:8px;font-size:13px;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  // ---------------------------------------------------------------------------------------------
+  // Mural de Programação (Ordens de Serviço) — página sozinha, pensada pra abrir direto na TV. Lê o
+  // mesmo blob compartilhado do CMMS (fertgrow-cmms, tabela fertgrow_db no Supabase) com a chave
+  // pública (anon) já usada lá — não é segredo, só destranca a leitura. Nunca escreve nada (não
+  // sincroniza com a Melvin, não marca OS como concluída por aqui — é só um mural de leitura).
+  // Visual copiado do Mural de HH (sistema_gestao_projetos) que já existe na Fertgrow, adaptado pra
+  // girar por OFICINA (em vez de por setor) e mostrar Ordens de Serviço (sem timeline de hora a
+  // hora, já que esse dado não tem apontamento de horário de início/fim como o de HH tem).
+  // ---------------------------------------------------------------------------------------------
+  const SUPABASE_URL = 'https://woabzpjzjkaqkjmzsiqj.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_kAbXzgAybK885fnyV2-7kQ_6B623rg7';
+
+  const $ = (sel, root=document) => root.querySelector(sel);
+  const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+  const esc = (s) => String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+  const PD_SEM_EXECUTANTE = 'Sem executante definido';
+  const PD_STATUS_INFO = {
+    'Concluída': { label: 'Concluída', cor: 'var(--emerald)', bg: 'rgba(52,211,153,.14)', dot: '✓' },
+    'Em Andamento': { label: 'Em execução', cor: 'var(--cyan)', bg: 'rgba(34,211,238,.14)', dot: '▶' },
+    'Aberta': { label: 'Pendente', cor: 'var(--amber)', bg: 'rgba(251,191,36,.14)', dot: '•' },
+    'Cancelada': { label: 'Impedida', cor: 'var(--rose)', bg: 'rgba(251,113,133,.14)', dot: '⚠' },
+  };
+  function statusInfo(status) { return PD_STATUS_INFO[status] || { label: status || '—', cor: 'var(--muted)', bg: 'rgba(138,148,172,.14)', dot: '•' }; }
+
+  async function buscarDbAtual() {
+    const resp = await fetch(`${SUPABASE_URL}/rest/v1/fertgrow_db?id=eq.1&select=data`, {
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+    });
+    if (!resp.ok) throw new Error(`Falha ao buscar dados (HTTP ${resp.status}).`);
+    const linhas = await resp.json();
+    if (!linhas.length) throw new Error('Linha compartilhada não encontrada.');
+    return linhas[0].data;
+  }
+
+  function ordensComDia(db) {
+    return (db.ordens || []).filter(o => o.melvinId && o.dataProgramada);
+  }
+  function diasDisponiveis(db) {
+    return [...new Set(ordensComDia(db).map(o => o.dataProgramada))].sort();
+  }
+  function diaPadrao(db) {
+    const dias = diasDisponiveis(db);
+    const hoje = new Date().toISOString().slice(0, 10);
+    if (!dias.length) return hoje;
+    if (dias.includes(hoje)) return hoje;
+    const anteriores = dias.filter(d => d <= hoje);
+    return anteriores.length ? anteriores[anteriores.length - 1] : dias[0];
+  }
+  const DIAS_ABREV = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  function diaAbrevLabel(dataISO) {
+    const d = new Date(dataISO + 'T00:00:00');
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} (${DIAS_ABREV[d.getDay()]})`;
+  }
+
+  function osCardHTML(o) {
+    const info = statusInfo(o.status);
+    const ativoLabel = [o.tagAtivo, o.nomeAtivo].filter(Boolean).join(' · ') || '—';
+    return `
+      <div style="padding:8px 0;border-top:1px solid var(--border);">
+        <div class="row-flex" style="justify-content:space-between;gap:8px;">
+          <b style="font-size:12.5px;color:var(--brand-light);">${esc(o.numero||'')}</b>
+          ${o.planta ? `<span class="badge" style="background:var(--surface2);color:var(--muted);">${esc(o.planta)}</span>` : ''}
+        </div>
+        <div style="font-size:13px;margin:3px 0;">${esc(o.descricao||'')}</div>
+        <div class="row-flex" style="justify-content:space-between;gap:8px;font-size:11.5px;color:var(--muted);">
+          <span>${esc(ativoLabel)}</span><span>${o.horasPrevistas||0}h</span>
+        </div>
+        <span class="badge" style="margin-top:4px;background:${info.bg};color:${info.cor};">${info.dot} ${info.label}</span>
+      </div>`;
+  }
+
+  function executanteCardHTML(nome, lista) {
+    const contagem = { 'Concluída':0,'Em Andamento':0,'Aberta':0,'Cancelada':0 };
+    lista.forEach(o => { if (contagem[o.status]!==undefined) contagem[o.status]++; });
+    return `
+      <div class="card">
+        <div class="row-flex" style="justify-content:space-between;">
+          <b style="font-size:14px;">${esc(nome)}</b>
+          <span style="font-size:11.5px;color:var(--muted);">${lista.length} OS</span>
+        </div>
+        <div class="row-flex" style="gap:10px;font-size:11.5px;margin:6px 0 2px;">
+          <span style="color:var(--emerald);">✓ ${contagem['Concluída']}</span>
+          <span style="color:var(--cyan);">▶ ${contagem['Em Andamento']}</span>
+          <span style="color:var(--amber);">• ${contagem['Aberta']}</span>
+          <span style="color:var(--rose);">⚠ ${contagem['Cancelada']}</span>
+        </div>
+        <div>${lista.map(osCardHTML).join('')}</div>
+      </div>`;
+  }
+
+  function oficinaSlideHTML(nomeOficina, ordensOficina, idx, total) {
+    const contagem = { 'Concluída':0,'Em Andamento':0,'Aberta':0,'Cancelada':0 };
+    ordensOficina.forEach(o => { if (contagem[o.status]!==undefined) contagem[o.status]++; });
+    const porExec = {};
+    ordensOficina.forEach(o => { const k = o.executante || PD_SEM_EXECUTANTE; (porExec[k]=porExec[k]||[]).push(o); });
+    const execs = Object.keys(porExec).sort((a,b) => a===PD_SEM_EXECUTANTE ? 1 : b===PD_SEM_EXECUTANTE ? -1 : a.localeCompare(b,'pt-BR'));
+    return `
+      <div style="font-size:14px;color:var(--brand-light);font-weight:700;margin-bottom:4px;">Oficina ${idx+1} de ${total} — ${esc(nomeOficina)}</div>
+      <div class="row-flex" style="gap:14px;font-size:13px;color:var(--muted);margin-bottom:14px;">
+        <span>${ordensOficina.length} OS</span>
+        <span style="color:var(--emerald);">✓ ${contagem['Concluída']} concluídas</span>
+        <span style="color:var(--cyan);">▶ ${contagem['Em Andamento']} em execução</span>
+        <span style="color:var(--amber);">• ${contagem['Aberta']} pendentes</span>
+        <span style="color:var(--rose);">⚠ ${contagem['Cancelada']} impedidas</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;">
+        ${execs.map(nome => executanteCardHTML(nome, porExec[nome])).join('')}
+      </div>`;
+  }
+
+  const RATE_OPTIONS = [30,60,120,300];
+  const SLIDE_OPTIONS = [8,12,20,30];
+  let date = null, followingToday = true, dayData = null;
+  let REFRESH_SECONDS = 60, secondsLeft = REFRESH_SECONDS;
+  let slideMode = true, SLIDE_SECONDS = 12, slideSecondsLeft = SLIDE_SECONDS, slideIdx = 0;
+
+  function rateOptionsHTML(){ return RATE_OPTIONS.map(s => `<option value="${s}" ${s===REFRESH_SECONDS?'selected':''}>${s<60?s+'s':(s/60)+'min'}</option>`).join(''); }
+  function slideRateOptionsHTML(){ return SLIDE_OPTIONS.map(s => `<option value="${s}" ${s===SLIDE_SECONDS?'selected':''}>${s}s</option>`).join(''); }
+
+  function oficinasDoDia(db, dia) {
+    const doDia = ordensComDia(db).filter(o => o.dataProgramada === dia);
+    const porOf = {};
+    doDia.forEach(o => { const k = o.oficina || 'Sem oficina definida'; (porOf[k]=porOf[k]||[]).push(o); });
+    return Object.keys(porOf).sort((a,b) => a.localeCompare(b,'pt-BR')).map(nome => ({ nome, ordens: porOf[nome] }));
+  }
+
+  function paint() {
+    if (!dayData) { $('#root').innerHTML = `<div style="padding:40px;color:var(--muted);">Carregando…</div>`; return; }
+    const oficinas = oficinasDoDia(dayData, date);
+    if (slideIdx >= oficinas.length) slideIdx = 0;
+    const showingSlide = slideMode && oficinas.length > 0;
+    const dateLabel = diaAbrevLabel(date);
+    const dotsHTML = showingSlide && oficinas.length > 1 ? `
+      <div class="row-flex" style="justify-content:center;gap:6px;margin-bottom:14px;">
+        ${oficinas.map((o,i) => `<div title="${esc(o.nome)}" style="width:${i===slideIdx?'22px':'8px'};height:8px;border-radius:4px;background:${i===slideIdx?'var(--brand-light)':'var(--border)'}"></div>`).join('')}
+      </div>` : '';
+    const diasOpts = diasDisponiveis(dayData);
+    const idxDia = diasOpts.indexOf(date);
+
+    $('#root').innerHTML = `
+      <div style="position:fixed;inset:0;background:var(--bg);overflow:auto;padding:28px 36px">
+        <div style="max-width:1700px;margin:0 auto">
+          <div class="row-flex" style="justify-content:space-between;align-items:flex-start;margin-bottom:20px;gap:12px">
+            <div>
+              <div style="font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700">Mural de Programação — Fertgrow</div>
+              <div class="row-flex" style="gap:8px;margin-top:4px">
+                <button class="btn ghost icon-only small" id="prevDayBtn" type="button" title="Dia anterior" ${idxDia<=0?'disabled':''}>‹</button>
+                <div style="font-size:26px;font-weight:800;">${esc(dateLabel)}</div>
+                <button class="btn ghost icon-only small" id="nextDayBtn" type="button" title="Dia seguinte" ${idxDia<0||idxDia>=diasOpts.length-1?'disabled':''}>›</button>
+                ${!followingToday ? `<button class="btn small" id="todayBtn" type="button">🏠 Hoje</button>` : ''}
+              </div>
+            </div>
+            <div class="row-flex" style="gap:16px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+              <div id="liveClock" style="font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;">${esc(new Date().toLocaleTimeString('pt-BR'))}</div>
+              <label class="row-flex" style="gap:6px;align-items:center;font-size:11.5px;color:var(--muted);cursor:pointer">
+                <input type="checkbox" id="slideToggle" ${slideMode?'checked':''} /> Slides por oficina
+              </label>
+              ${slideMode ? `
+              <div class="row-flex" style="gap:6px;align-items:center">
+                <button class="btn ghost icon-only small" id="slidePrevBtn" type="button" title="Oficina anterior">‹</button>
+                <select id="slideRate" title="Troca de oficina a cada">${slideRateOptionsHTML()}</select>
+                <button class="btn ghost icon-only small" id="slideNextBtn" type="button" title="Próxima oficina">›</button>
+              </div>` : ''}
+              <div class="row-flex" style="gap:8px;align-items:center">
+                <label for="refreshRate" style="font-size:11.5px;color:var(--muted)">Atualiza a cada</label>
+                <select id="refreshRate">${rateOptionsHTML()}</select>
+              </div>
+              <div style="font-size:12.5px;color:var(--muted)">🔄 próxima em <span id="countdown" style="color:var(--brand-light);font-weight:700">${secondsLeft}</span>s</div>
+            </div>
+          </div>
+          ${dotsHTML}
+          ${!oficinas.length
+            ? `<div class="empty"><h3>Nenhuma OS programada nesse dia</h3></div>`
+            : `<div class="card">${showingSlide
+                ? oficinaSlideHTML(oficinas[slideIdx].nome, oficinas[slideIdx].ordens, slideIdx, oficinas.length)
+                : oficinas.map((o,i) => oficinaSlideHTML(o.nome, o.ordens, i, oficinas.length)).join('<div style="height:24px;"></div>')}</div>`}
+          <p style="font-size:10.5px;color:var(--muted);margin-top:20px;text-align:center">Atualizado às ${esc(new Date().toLocaleTimeString('pt-BR'))} — leitura do mesmo dado já sincronizado no CMMS (não chama a Melvin diretamente)</p>
+        </div>
+      </div>`;
+
+    $('#prevDayBtn').addEventListener('click', () => changeDay(-1));
+    $('#nextDayBtn').addEventListener('click', () => changeDay(1));
+    const todayBtn = $('#todayBtn');
+    if (todayBtn) todayBtn.addEventListener('click', () => { followingToday = true; date = diaPadrao(dayData); paint(); });
+    $('#refreshRate').addEventListener('change', e => { REFRESH_SECONDS = Number(e.target.value)||60; secondsLeft = REFRESH_SECONDS; });
+    $('#slideToggle').addEventListener('change', e => { slideMode = e.target.checked; slideIdx = 0; slideSecondsLeft = SLIDE_SECONDS; paint(); });
+    const slideRateSel = $('#slideRate');
+    if (slideRateSel) slideRateSel.addEventListener('change', e => { SLIDE_SECONDS = Number(e.target.value)||12; slideSecondsLeft = SLIDE_SECONDS; });
+    const slidePrevBtn = $('#slidePrevBtn');
+    if (slidePrevBtn) slidePrevBtn.addEventListener('click', () => { const n=oficinas.length; if(!n) return; slideIdx=(slideIdx-1+n)%n; slideSecondsLeft=SLIDE_SECONDS; paint(); });
+    const slideNextBtn = $('#slideNextBtn');
+    if (slideNextBtn) slideNextBtn.addEventListener('click', () => { const n=oficinas.length; if(!n) return; slideIdx=(slideIdx+1)%n; slideSecondsLeft=SLIDE_SECONDS; paint(); });
+  }
+
+  function changeDay(delta) {
+    followingToday = false;
+    const dias = diasDisponiveis(dayData);
+    const idx = dias.indexOf(date);
+    const novo = idx + delta;
+    if (novo < 0 || novo >= dias.length) return;
+    date = dias[novo];
+    paint();
+  }
+
+  async function refresh() {
+    try {
+      dayData = await buscarDbAtual();
+      if (followingToday) date = diaPadrao(dayData);
+      if (!date) date = diaPadrao(dayData);
+    } catch (e) { /* falha momentânea — mantém o último dado bom na tela */ }
+    secondsLeft = REFRESH_SECONDS;
+    paint();
+  }
+
+  refresh();
+  setInterval(() => {
+    secondsLeft--;
+    const clockEl = document.getElementById('liveClock');
+    if (clockEl) clockEl.textContent = new Date().toLocaleTimeString('pt-BR');
+    let needRepaint = false;
+    if (slideMode && dayData) {
+      const oficinas = oficinasDoDia(dayData, date);
+      if (oficinas.length > 1) {
+        slideSecondsLeft--;
+        if (slideSecondsLeft <= 0) { slideIdx = (slideIdx+1) % oficinas.length; slideSecondsLeft = SLIDE_SECONDS; needRepaint = true; }
+      }
+    }
+    if (secondsLeft <= 0) { refresh(); return; }
+    if (needRepaint) { paint(); return; }
+    const el = document.getElementById('countdown');
+    if (el) el.textContent = secondsLeft; else paint();
+  }, 1000);
+</script>
+</body>
+</html>
