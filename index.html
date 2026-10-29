@@ -142,19 +142,31 @@
       </div>`;
   }
 
-  const RATE_OPTIONS = [30,60,120,300];
+  const RATE_OPTIONS = [30,60,120,300,3600];
   const SLIDE_OPTIONS = [8,12,20,30];
   let date = null, followingToday = true, dayData = null;
-  let REFRESH_SECONDS = 60, secondsLeft = REFRESH_SECONDS;
+  // Sincronizacao com a Melvin so acontece de hora em hora (GitHub Action no
+  // fertgrow-cmms) — atualizar o mural mais rapido que isso so gasta leitura
+  // no Supabase a toa, entao o padrao aqui tambem e 1h.
+  let REFRESH_SECONDS = 3600, secondsLeft = REFRESH_SECONDS;
   let slideMode = true, SLIDE_SECONDS = 12, slideSecondsLeft = SLIDE_SECONDS, slideIdx = 0;
 
-  function rateOptionsHTML(){ return RATE_OPTIONS.map(s => `<option value="${s}" ${s===REFRESH_SECONDS?'selected':''}>${s<60?s+'s':(s/60)+'min'}</option>`).join(''); }
+  function rateLabel(s){ if (s<60) return s+'s'; if (s<3600) return (s/60)+'min'; return (s/3600)+'h'; }
+  function rateOptionsHTML(){ return RATE_OPTIONS.map(s => `<option value="${s}" ${s===REFRESH_SECONDS?'selected':''}>${rateLabel(s)}</option>`).join(''); }
   function slideRateOptionsHTML(){ return SLIDE_OPTIONS.map(s => `<option value="${s}" ${s===SLIDE_SECONDS?'selected':''}>${s}s</option>`).join(''); }
+
+  // A Melvin cadastra a mesma oficina em variantes diferentes conforme o tipo
+  // de manutenção (ex: "Elétrica Preventiva" e "Elétrica Corretiva") — isso
+  // faz a mesma equipe virar 2+ slides separados sem necessidade. Tira esse
+  // sufixo pra juntar tudo numa oficina só (ex: ambas viram "Elétrica").
+  function normalizarOficina(nome) {
+    return (nome || '').trim().replace(/\s+(preventiva|corretiva)$/i, '').trim();
+  }
 
   function oficinasDoDia(db, dia) {
     const doDia = ordensComDia(db).filter(o => o.dataProgramada === dia);
     const porOf = {};
-    doDia.forEach(o => { const k = o.oficina || 'Sem oficina definida'; (porOf[k]=porOf[k]||[]).push(o); });
+    doDia.forEach(o => { const k = normalizarOficina(o.oficina) || 'Sem oficina definida'; (porOf[k]=porOf[k]||[]).push(o); });
     return Object.keys(porOf).sort((a,b) => a.localeCompare(b,'pt-BR')).map(nome => ({ nome, ordens: porOf[nome] }));
   }
 
