@@ -240,7 +240,7 @@
             : `<div class="card">${showingSlide
                 ? oficinaSlideHTML(oficinas[slideIdx].nome, oficinas[slideIdx].ordens, slideIdx, oficinas.length)
                 : oficinas.map((o,i) => oficinaSlideHTML(o.nome, o.ordens, i, oficinas.length)).join('<div style="height:24px;"></div>')}</div>`}
-          <p style="font-size:10.5px;color:var(--muted);margin-top:20px;text-align:center">Atualizado às ${esc(new Date().toLocaleTimeString('pt-BR'))} — leitura do mesmo dado já sincronizado no CMMS (não chama a Melvin diretamente)</p>
+          <p style="font-size:10.5px;color:var(--muted);margin-top:20px;text-align:center">Atualizado às ${esc(new Date().toLocaleTimeString('pt-BR'))}</p>
         </div>
       </div>`;
 
