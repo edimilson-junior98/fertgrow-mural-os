@@ -67,7 +67,10 @@
   }
 
   function ordensComDia(db) {
-    return (db.ordens || []).filter(o => o.melvinId && o.dataProgramada);
+    // Só as OS com programação de verdade na Melvin (campo `DatasProgramacao`
+    // preenchido) — exclui OS que só foram abertas no dia sem agendamento
+    // formal (dataProgramada, nesse caso, só reflete a data de abertura).
+    return (db.ordens || []).filter(o => o.melvinId && o.dataProgramada && o.temProgramacaoReal);
   }
   function diasDisponiveis(db) {
     return [...new Set(ordensComDia(db).map(o => o.dataProgramada))].sort();
