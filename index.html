@@ -167,7 +167,7 @@
   // fertgrow-cmms) — atualizar o mural mais rapido que isso so gasta leitura
   // no Supabase a toa, entao o padrao aqui tambem e 1h.
   let REFRESH_SECONDS = 3600, secondsLeft = REFRESH_SECONDS;
-  let slideMode = true, SLIDE_SECONDS = 12, slideSecondsLeft = SLIDE_SECONDS, slideIdx = 0;
+  let slideMode = true, SLIDE_SECONDS = 20, slideSecondsLeft = SLIDE_SECONDS, slideIdx = 0;
 
   function rateLabel(s){ if (s<60) return s+'s'; if (s<3600) return (s/60)+'min'; return (s/3600)+'h'; }
   function rateOptionsHTML(){ return RATE_OPTIONS.map(s => `<option value="${s}" ${s===REFRESH_SECONDS?'selected':''}>${rateLabel(s)}</option>`).join(''); }
