@@ -56,6 +56,21 @@
   };
   function statusInfo(status) { return PD_STATUS_INFO[status] || { label: status || '—', cor: 'var(--muted)', bg: 'rgba(138,148,172,.14)', dot: '•' }; }
 
+  // Nome "curto" (primeiro + último nome) só na exibição — o agrupamento por
+  // executante continua usando o nome completo vindo do CMMS, então dois
+  // nomes com primeiro+último iguais mas sobrenome do meio diferente não se
+  // misturam. Quando a OS tem mais de um executante (campo já vem "Fulano,
+  // Beltrano"), cada nome é encurtado individualmente.
+  function nomeCurto(nomeCompleto) {
+    const partes = (nomeCompleto || '').trim().split(/\s+/).filter(Boolean);
+    if (partes.length <= 2) return nomeCompleto;
+    return `${partes[0]} ${partes[partes.length - 1]}`;
+  }
+  function nomesCurto(nomes) {
+    if (!nomes || nomes === PD_SEM_EXECUTANTE) return nomes;
+    return nomes.split(',').map(n => nomeCurto(n.trim())).join(', ');
+  }
+
   async function buscarDbAtual() {
     const resp = await fetch(`${SUPABASE_URL}/rest/v1/fertgrow_db?id=eq.1&select=data`, {
       headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
@@ -112,7 +127,7 @@
     return `
       <div class="card">
         <div class="row-flex" style="justify-content:space-between;">
-          <b style="font-size:14px;">${esc(nome)}</b>
+          <b style="font-size:14px;">${esc(nomesCurto(nome))}</b>
           <span style="font-size:11.5px;color:var(--muted);">${lista.length} OS</span>
         </div>
         <div class="row-flex" style="gap:10px;font-size:11.5px;margin:6px 0 2px;">
