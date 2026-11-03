@@ -32,10 +32,11 @@
 <div id="root"></div>
 <script>
   // ---------------------------------------------------------------------------------------------
-  // Mural de Programação (Ordens de Serviço) — página sozinha, pensada pra abrir direto na TV. Lê o
-  // mesmo blob compartilhado do CMMS (fertgrow-cmms, tabela fertgrow_db no Supabase) com a chave
-  // pública (anon) já usada lá — não é segredo, só destranca a leitura. Nunca escreve nada (não
-  // sincroniza com a Melvin, não marca OS como concluída por aqui — é só um mural de leitura).
+  // Mural de Programação (Ordens de Serviço) — página sozinha, pensada pra abrir direto na TV. Lê a
+  // coleção "ordens" do CMMS (fertgrow-cmms, tabela fertgrow_collections no Supabase — cada coleção
+  // numa linha própria, não mais um blob único) com a chave pública (anon) já usada lá — não é
+  // segredo, só destranca a leitura. Nunca escreve nada (não sincroniza com a Melvin, não marca OS
+  // como concluída por aqui — é só um mural de leitura).
   // Visual copiado do Mural de HH (sistema_gestao_projetos) que já existe na Fertgrow, adaptado pra
   // girar por OFICINA (em vez de por setor) e mostrar Ordens de Serviço (sem timeline de hora a
   // hora, já que esse dado não tem apontamento de horário de início/fim como o de HH tem).
@@ -72,13 +73,13 @@
   }
 
   async function buscarDbAtual() {
-    const resp = await fetch(`${SUPABASE_URL}/rest/v1/fertgrow_db?id=eq.1&select=data`, {
+    const resp = await fetch(`${SUPABASE_URL}/rest/v1/fertgrow_collections?id=eq.ordens&select=ordens:data`, {
       headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
     });
     if (!resp.ok) throw new Error(`Falha ao buscar dados (HTTP ${resp.status}).`);
     const linhas = await resp.json();
     if (!linhas.length) throw new Error('Linha compartilhada não encontrada.');
-    return linhas[0].data;
+    return linhas[0];
   }
 
   function ordensComDia(db) {
@@ -160,7 +161,7 @@
       </div>`;
   }
 
-  const RATE_OPTIONS = [30,60,120,300,1800,3600];
+  const RATE_OPTIONS = [20,30,60,120,300,1800,3600];
   const SLIDE_OPTIONS = [8,12,20,30];
   let date = null, followingToday = true, dayData = null;
   // Sincronizacao com a Melvin so acontece de hora em hora (GitHub Action no
