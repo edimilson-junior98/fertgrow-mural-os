@@ -141,14 +141,15 @@
       </div>`;
   }
 
-  function oficinaSlideHTML(nomeOficina, ordensOficina, idx, total) {
+  function oficinaSlideHTML(nomeOficina, ordensOficina, idx, total, parte, totalPartes) {
     const contagem = { 'Concluída':0,'Em Andamento':0,'Aberta':0,'Cancelada':0 };
     ordensOficina.forEach(o => { if (contagem[o.status]!==undefined) contagem[o.status]++; });
     const porExec = {};
     ordensOficina.forEach(o => { const k = o.executante || PD_SEM_EXECUTANTE; (porExec[k]=porExec[k]||[]).push(o); });
     const execs = Object.keys(porExec).sort((a,b) => a===PD_SEM_EXECUTANTE ? 1 : b===PD_SEM_EXECUTANTE ? -1 : a.localeCompare(b,'pt-BR'));
+    const tituloOficina = esc(nomeOficina) + (parte ? ` (${parte}/${totalPartes})` : '');
     return `
-      <div style="font-size:14px;color:var(--brand-light);font-weight:700;margin-bottom:4px;">Oficina ${idx+1} de ${total} — ${esc(nomeOficina)}</div>
+      <div style="font-size:14px;color:var(--brand-light);font-weight:700;margin-bottom:4px;">Oficina ${idx+1} de ${total} — ${tituloOficina}</div>
       <div class="row-flex" style="gap:14px;font-size:13px;color:var(--muted);margin-bottom:14px;">
         <span>${ordensOficina.length} OS</span>
         <span style="color:var(--emerald);">✓ ${contagem['Concluída']} concluídas</span>
@@ -206,15 +207,50 @@
     });
   }
 
+  // Quando uma oficina tem gente demais pra caber numa tela só, divide ela em
+  // mais de uma "página" (cada uma vira seu próprio slide, com o nome da
+  // oficina + "(parte X/Y)") em vez de cortar os cards embaixo. A régua usada
+  // é o total de OS na página (proxy razoável do espaço vertical ocupado) —
+  // nunca divide as OS de um mesmo executante entre duas páginas, então uma
+  // pessoa com muita coisa sozinha pode passar um pouco do limite.
+  const MAX_OS_POR_PAGINA = 12;
+
+  function paginasDoDia(db, dia) {
+    const paginas = [];
+    oficinasDoDia(db, dia).forEach((of) => {
+      const porExec = {};
+      of.ordens.forEach(o => { const k = o.executante || PD_SEM_EXECUTANTE; (porExec[k]=porExec[k]||[]).push(o); });
+      const execs = Object.keys(porExec).sort((a,b) => a===PD_SEM_EXECUTANTE ? 1 : b===PD_SEM_EXECUTANTE ? -1 : a.localeCompare(b,'pt-BR'));
+
+      const grupos = [];
+      let atual = { ordens: [], qtdExecs: 0 };
+      execs.forEach((nome) => {
+        const osDoExec = porExec[nome];
+        if (atual.qtdExecs > 0 && atual.ordens.length + osDoExec.length > MAX_OS_POR_PAGINA) {
+          grupos.push(atual);
+          atual = { ordens: [], qtdExecs: 0 };
+        }
+        atual.ordens = atual.ordens.concat(osDoExec);
+        atual.qtdExecs++;
+      });
+      if (atual.qtdExecs) grupos.push(atual);
+
+      grupos.forEach((g, i) => {
+        paginas.push({ nome: of.nome, ordens: g.ordens, parte: grupos.length > 1 ? i + 1 : null, totalPartes: grupos.length });
+      });
+    });
+    return paginas;
+  }
+
   function paint() {
     if (!dayData) { $('#root').innerHTML = `<div style="padding:40px;color:var(--muted);">Carregando…</div>`; return; }
-    const oficinas = oficinasDoDia(dayData, date);
+    const oficinas = paginasDoDia(dayData, date);
     if (slideIdx >= oficinas.length) slideIdx = 0;
     const showingSlide = slideMode && oficinas.length > 0;
     const dateLabel = diaAbrevLabel(date);
     const dotsHTML = showingSlide && oficinas.length > 1 ? `
       <div class="row-flex" style="justify-content:center;gap:6px;margin-bottom:14px;">
-        ${oficinas.map((o,i) => `<div title="${esc(o.nome)}" style="width:${i===slideIdx?'22px':'8px'};height:8px;border-radius:4px;background:${i===slideIdx?'var(--brand-light)':'var(--border)'}"></div>`).join('')}
+        ${oficinas.map((o,i) => `<div title="${esc(o.nome)}${o.parte ? ` (${o.parte}/${o.totalPartes})` : ''}" style="width:${i===slideIdx?'22px':'8px'};height:8px;border-radius:4px;background:${i===slideIdx?'var(--brand-light)':'var(--border)'}"></div>`).join('')}
       </div>` : '';
     const diasOpts = diasDisponiveis(dayData);
     const idxDia = diasOpts.indexOf(date);
@@ -254,8 +290,8 @@
           ${!oficinas.length
             ? `<div class="empty"><h3>Nenhuma OS programada nesse dia</h3></div>`
             : `<div class="card">${showingSlide
-                ? oficinaSlideHTML(oficinas[slideIdx].nome, oficinas[slideIdx].ordens, slideIdx, oficinas.length)
-                : oficinas.map((o,i) => oficinaSlideHTML(o.nome, o.ordens, i, oficinas.length)).join('<div style="height:24px;"></div>')}</div>`}
+                ? oficinaSlideHTML(oficinas[slideIdx].nome, oficinas[slideIdx].ordens, slideIdx, oficinas.length, oficinas[slideIdx].parte, oficinas[slideIdx].totalPartes)
+                : oficinas.map((o,i) => oficinaSlideHTML(o.nome, o.ordens, i, oficinas.length, o.parte, o.totalPartes)).join('<div style="height:24px;"></div>')}</div>`}
           <p style="font-size:10.5px;color:var(--muted);margin-top:20px;text-align:center">Atualizado às ${esc(new Date().toLocaleTimeString('pt-BR'))}</p>
         </div>
       </div>`;
@@ -301,7 +337,7 @@
     if (clockEl) clockEl.textContent = new Date().toLocaleTimeString('pt-BR');
     let needRepaint = false;
     if (slideMode && dayData) {
-      const oficinas = oficinasDoDia(dayData, date);
+      const oficinas = paginasDoDia(dayData, date);
       if (oficinas.length > 1) {
         slideSecondsLeft--;
         if (slideSecondsLeft <= 0) { slideIdx = (slideIdx+1) % oficinas.length; slideSecondsLeft = SLIDE_SECONDS; needRepaint = true; }
